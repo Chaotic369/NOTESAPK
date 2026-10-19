@@ -12,6 +12,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
 private val Teal = Color(0xFF1F7A6D)
+private val GreenBgLight = Color(0xFFDFF5E1)
+private val GreenBgDark = Color(0xFF0F2A17)
 
 private val LightColors = lightColorScheme(
     primary = Teal,
@@ -39,6 +41,9 @@ fun NtTheme(dark: Boolean = isSystemInDarkTheme(), content: @Composable () -> Un
             if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         dark -> DarkColors
         else -> LightColors
-    }
-    MaterialTheme(colorScheme = colors, content = content)
+            }.copy(
+                background = if (dark) GreenBgDark else GreenBgLight,
+                surface = if (dark) GreenBgDark else GreenBgLight,
+            )
+            MaterialTheme(colorScheme = colors, content = content)
 }
