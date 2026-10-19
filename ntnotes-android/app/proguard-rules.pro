@@ -1,0 +1,4 @@
+-dontwarn com.google.errorprone.annotations.**
+-dontwarn javax.annotation.**
+-dontwarn org.checkerframework.**
+-keepattributes SourceFile,LineNumberTable

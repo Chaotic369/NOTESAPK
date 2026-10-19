@@ -1,0 +1,5 @@
+{
+  "_comment": "This is NOT the real file. Download the real google-services.json from Firebase console > Project settings > Your apps > (Android app) and save it as app/google-services.json.",
+  "project_info": { "project_number": "...", "project_id": "ntnotes-58411", "firebase_url": "https://ntnotes-58411-default-rtdb.firebaseio.com" },
+  "client": [ { "client_info": { "mobilesdk_app_id": "1:...:android:...", "android_client_info": { "package_name": "app.ntnotes.android" } } } ]
+}
