@@ -1,0 +1,40 @@
+{
+  "project_info": {
+    "project_number": "866597628713",
+    "firebase_url": "https://ntnotes-58411-default-rtdb.firebaseio.com",
+    "project_id": "ntnotes-58411",
+    "storage_bucket": "ntnotes-58411.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:866597628713:android:9aa97f671ba96a59dc6538",
+        "android_client_info": {
+          "package_name": "app.ntnotes.android"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "866597628713-ojhek3fdc99a7l3jctbj5fd6s7sbo61h.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDHDa3itvMPCmcyEQCYPapdFJ0YLidbWuI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "866597628713-ojhek3fdc99a7l3jctbj5fd6s7sbo61h.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
