@@ -1,0 +1,160 @@
+name: Custom Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_name:
+        description: "App name (launcher label)"
+        required: false
+        default: "Notes"
+      app_version:
+        description: "App version (versionName, e.g. 1.0.0)"
+        required: false
+        default: "1.0.0"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      APP_NAME: ${{ github.event.inputs.app_name || 'Notes' }}
+      APP_VERSION: ${{ github.event.inputs.app_version || '1.0.0' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The zip was extracted into a wrapper folder, so find the real project root
+      # (the folder that contains settings.gradle.kts) instead of assuming the repo root.
+      - name: Locate Android project
+        id: locate
+        run: |
+          set -e
+          HIT=$(find . -maxdepth 4 \( -name settings.gradle.kts -o -name settings.gradle \) -not -path './.git/*' | sort | head -n 1)
+          if [ -z "$HIT" ]; then
+            echo "::error::No settings.gradle(.kts) found in the repository."
+            find . -maxdepth 3 -not -path './.git/*' | head -n 60
+            exit 1
+          fi
+          DIR=$(dirname "$HIT")
+          echo "Android project found in: $DIR"
+          echo "dir=$DIR" >> "$GITHUB_OUTPUT"
+
+      - name: Add google-services.json from secret (optional)
+        working-directory: ${{ steps.locate.outputs.dir }}
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            printf '%s' "$GOOGLE_SERVICES_JSON" > app/google-services.json
+          fi
+          if [ ! -s app/google-services.json ]; then
+            echo "::error::app/google-services.json is missing. Commit it (Firebase console > Project settings > Your apps > Android) or add its contents as a repository secret named GOOGLE_SERVICES_JSON."
+            exit 1
+          fi
+
+      - name: Set up Java 17 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # NOTE: gradle-version is 8.9 instead of 8.7 on purpose: this project uses Android Gradle
+      # Plugin 8.7.3, which requires Gradle 8.9 or newer. With 8.7 the build fails at configuration time.
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Patch app name and version
+        working-directory: ${{ steps.locate.outputs.dir }}
+        run: |
+          python3 - <<'PY'
+          import os, re, sys
+          from xml.sax.saxutils import escape
+
+          name = os.environ["APP_NAME"].strip() or "Notes"
+          version = os.environ["APP_VERSION"].strip() or "1.0.0"
+
+          # versionCode: 1.2.3 -> 10203 (major*10000 + minor*100 + patch); otherwise the run number.
+          m = re.match(r"^(\d+)(?:\.(\d+))?(?:\.(\d+))?", version)
+          if m:
+              major, minor, patch = (int(g) if g else 0 for g in m.groups())
+              code = major * 10000 + minor * 100 + patch
+          else:
+              code = int(os.environ.get("GITHUB_RUN_NUMBER", "1"))
+          code = max(code, 1)
+
+          # --- AndroidManifest.xml: android:label on <application>
+          mpath = "app/src/main/AndroidManifest.xml"
+          with open(mpath, encoding="utf-8") as f:
+              xml = f.read()
+          label = escape(name, {'"': "&quot;"}).replace("\\", "\\\\").replace("'", "\\'")
+          if label[:1] in ("@", "?"):
+              label = "\\" + label
+          xml, n = re.subn(r'android:label="[^"]*"', lambda _m: 'android:label="%s"' % label, xml, count=1)
+          if n != 1:
+              sys.exit("android:label not found in " + mpath)
+          with open(mpath, "w", encoding="utf-8") as f:
+              f.write(xml)
+
+          # --- app/build.gradle.kts: versionName / versionCode
+          gpath = "app/build.gradle.kts"
+          with open(gpath, encoding="utf-8") as f:
+              g = f.read()
+          g, n1 = re.subn(r'versionName\s*=\s*"[^"]*"', lambda _m: 'versionName = "%s"' % version.replace('"', ""), g, count=1)
+          g, n2 = re.subn(r'versionCode\s*=\s*\d+', lambda _m: "versionCode = %d" % code, g, count=1)
+          if n1 != 1 or n2 != 1:
+              sys.exit("versionName/versionCode not found in " + gpath)
+          with open(gpath, "w", encoding="utf-8") as f:
+              f.write(g)
+
+          print("label=%r versionName=%r versionCode=%d" % (name, version, code))
+          PY
+
+      # If build-icon.png sits at the repo root (or in the project folder), use it as the launcher icon.
+      # The project ships an adaptive icon in mipmap-anydpi-v26 that would override plain PNGs on every
+      # device (minSdk is 26), so it is removed when a custom icon is injected.
+      - name: Inject launcher icon (build-icon.png)
+        working-directory: ${{ steps.locate.outputs.dir }}
+        env:
+          REPO_ROOT: ${{ github.workspace }}
+        run: |
+          ICON=""
+          if [ -f "$REPO_ROOT/build-icon.png" ]; then ICON="$REPO_ROOT/build-icon.png";
+          elif [ -f "build-icon.png" ]; then ICON="$(pwd)/build-icon.png"; fi
+          if [ -z "$ICON" ]; then
+            echo "No build-icon.png found, keeping the default icon."
+            exit 0
+          fi
+          echo "Using icon: $ICON"
+          python3 -m pip install --quiet pillow
+          ICON="$ICON" python3 - <<'PY'
+          import os
+          from PIL import Image
+
+          src = Image.open(os.environ["ICON"]).convert("RGBA")
+          w, h = src.size
+          s = min(w, h)
+          src = src.crop(((w - s) // 2, (h - s) // 2, (w - s) // 2 + s, (h - s) // 2 + s))
+          sizes = {"mdpi": 48, "hdpi": 72, "xhdpi": 96, "xxhdpi": 144, "xxxhdpi": 192}
+          for dens, px in sizes.items():
+              d = "app/src/main/res/mipmap-" + dens
+              os.makedirs(d, exist_ok=True)
+              src.resize((px, px), Image.LANCZOS).save(d + "/ic_launcher.png", "PNG")
+              print("wrote", d + "/ic_launcher.png")
+          PY
+          rm -f app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+          rm -f app/src/main/res/mipmap-anydpi/ic_launcher.xml
+
+      - name: Build debug APK
+        working-directory: ${{ steps.locate.outputs.dir }}
+        run: gradle assembleDebug --no-daemon
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.event.inputs.app_name || 'Notes' }}
+          path: ${{ steps.locate.outputs.dir }}/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
